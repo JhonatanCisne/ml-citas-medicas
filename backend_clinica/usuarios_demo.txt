@@ -1,0 +1,18 @@
+Usuarios demo para el prototipo local
+
+Rol: Paciente
+Correo: paciente@clinica.com
+Contraseña: Paciente123
+
+Rol: Médico
+Correo: medico@clinica.com
+Contraseña: Medico123
+
+Rol: Administrador
+Correo: admin@clinica.com
+Contraseña: Admin123
+
+Notas:
+- El login usa JWT y separa permisos por rol.
+- Ejecuta `python manage.py seed_demo` dentro de `backend_clinica` para insertar estos registros demo si tu base está vacía.
+- La estructura de tablas no se modifica; los modelos Django están marcados como `managed = False`.

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 // Lista de Especialidades con iconos, colores y descripción
 const especialidades = [
