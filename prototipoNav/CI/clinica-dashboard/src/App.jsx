@@ -7,7 +7,7 @@ const roleHome = { paciente: "Mis Citas", medico: "Agenda Médica", admin: "Dash
 const navByRole = {
   paciente: ["Mis Citas", "Reservar Cita", "Notificaciones", "Canales de Atención"],
   medico: ["Agenda Médica", "Mi Disponibilidad", "Notificaciones"],
-  admin: ["Dashboard", "Gestión de Citas", "Cancelaciones", "Disponibilidad", "Médicos", "Horarios"],
+  admin: ["Dashboard", "Gestión de Citas", "Cancelaciones", "Disponibilidad", "Médicos", "Horarios", "Demanda"],
 };
 
 const estadoMeta = {
@@ -167,13 +167,6 @@ function IconClose({ className }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  );
-}
-function IconTrash({ className }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-.867 12.142A2 2 0 0114.138 21H9.862a2 2 0 01-1.995-1.858L7 7h10z" />
     </svg>
   );
 }
@@ -3180,72 +3173,232 @@ function GestionMedicos() {
   );
 }
 
-const DIAS_SEMANA = [
-  { value: 0, label: "Lun" },
-  { value: 1, label: "Mar" },
-  { value: 2, label: "Mié" },
-  { value: 3, label: "Jue" },
-  { value: 4, label: "Vie" },
-  { value: 5, label: "Sáb" },
-  { value: 6, label: "Dom" },
-];
+const DIA_LABEL_CORTO = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-const HORARIO_ESTADO_META = {
-  DISPONIBLE: { label: "Disponible", badge: "bg-green-50 text-green-700 border-green-200" },
-  OCUPADA: { label: "Ocupada", badge: "bg-blue-50 text-blue-700 border-blue-200" },
-  BLOQUEADO: { label: "Bloqueado", badge: "bg-slate-100 text-slate-500 border-slate-200" },
-};
+const DIAS_SEMANA_ML_ORDEN = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"];
+const HORARIOS_ML_ORDEN = ["Manana", "Tarde", "After Office"];
+const HORARIO_ML_LABEL = { Manana: "Mañana", Tarde: "Tarde", "After Office": "After Office" };
 
-const HORARIO_FORM_INICIAL = () => {
-  const hoy = new Date().toISOString().slice(0, 10);
-  return {
-    fechaInicio: hoy,
-    fechaFin: hoy,
-    horaInicio: "08:00",
-    horaFin: "13:00",
-    duracionMinutos: "30",
-    tipoTurno: "REGULAR",
-  };
-};
-
-function EliminarHorarioModal({ horario, onCancel, onConfirm }) {
-  if (!horario) return null;
+function BarraDemanda({ label, valor, max, color }) {
+  const pct = max > 0 ? Math.round((valor / max) * 100) : 0;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onCancel}>
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-red-100 bg-red-50 text-red-600">
-          <IconTrash className="h-6 w-6" />
-        </div>
-        <h3 className="mt-4 text-center text-lg font-extrabold text-slate-900">Eliminar horario</h3>
-        <p className="mt-2 text-center text-sm text-slate-500">
-          Se eliminará el horario del {horario.fecha} de {horario.hora_inicio} a {horario.hora_fin}. Esta acción no se puede deshacer.
-        </p>
-        <div className="mt-5 flex gap-3">
-          <button onClick={onCancel} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-50">
-            Cancelar
-          </button>
-          <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl font-bold text-xs text-white bg-red-600 hover:bg-red-700">
-            Eliminar
-          </button>
-        </div>
+    <div>
+      <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+        <span>{label}</span>
+        <span className="font-bold text-slate-800">{valor}</span>
+      </div>
+      <div className="mt-1 h-2.5 w-full rounded-full bg-slate-100">
+        <div className="h-2.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
     </div>
   );
 }
 
-function GestionHorarios() {
-  const [catalogo, setCatalogo] = useState({ medicos: [] });
-  const [medicoId, setMedicoId] = useState("");
-  const [form, setForm] = useState(HORARIO_FORM_INICIAL);
-  const [diasSemana, setDiasSemana] = useState([]);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
+function promedioPorGrupo(filas, campo, orden) {
+  const grupos = {};
+  filas.forEach((f) => {
+    const key = f[campo];
+    if (!grupos[key]) grupos[key] = { total: 0, count: 0 };
+    grupos[key].total += Number(f.DemandaPredichaXGBoost);
+    grupos[key].count += 1;
+  });
+  const entradas = Object.entries(grupos).map(([key, { total, count }]) => ({
+    label: key,
+    valor: Math.round(total / count),
+  }));
+  if (orden) {
+    entradas.sort((a, b) => orden.indexOf(a.label) - orden.indexOf(b.label));
+  } else {
+    entradas.sort((a, b) => b.valor - a.valor);
+  }
+  return entradas;
+}
 
-  const [horarios, setHorarios] = useState([]);
-  const [horariosLoading, setHorariosLoading] = useState(false);
-  const [horariosError, setHorariosError] = useState("");
-  const [eliminarModal, setEliminarModal] = useState(null);
+function GestionDemanda() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [disponible, setDisponible] = useState(false);
+  const [recomendaciones, setRecomendaciones] = useState([]);
+  const [metricas, setMetricas] = useState(null);
+
+  const [filtroEspecialidad, setFiltroEspecialidad] = useState("");
+  const [filtroHorario, setFiltroHorario] = useState("");
+  const [filtroDia, setFiltroDia] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiRequest("/recomendacion-horarios/");
+        setDisponible(data.disponible);
+        setRecomendaciones(data.recomendaciones || []);
+        setMetricas(data.metricas || null);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const especialidades = useMemo(
+    () => Array.from(new Set(recomendaciones.map((r) => r.Especialidad))).sort(),
+    [recomendaciones]
+  );
+
+  const filtradas = useMemo(
+    () =>
+      recomendaciones.filter(
+        (r) =>
+          (!filtroEspecialidad || r.Especialidad === filtroEspecialidad) &&
+          (!filtroHorario || r.PreferenciaHoraria === filtroHorario) &&
+          (!filtroDia || r.DiaSemana === filtroDia)
+      ),
+    [recomendaciones, filtroEspecialidad, filtroHorario, filtroDia]
+  );
+
+  const porEspecialidad = useMemo(() => promedioPorGrupo(filtradas, "Especialidad"), [filtradas]);
+  const porHorario = useMemo(() => promedioPorGrupo(filtradas, "PreferenciaHoraria", HORARIOS_ML_ORDEN), [filtradas]);
+  const porDia = useMemo(() => promedioPorGrupo(filtradas, "DiaSemana", DIAS_SEMANA_ML_ORDEN), [filtradas]);
+
+  const maxEspecialidad = Math.max(1, ...porEspecialidad.map((e) => e.valor));
+  const maxHorario = Math.max(1, ...porHorario.map((e) => e.valor));
+  const maxDia = Math.max(1, ...porDia.map((e) => e.valor));
+
+  const hayFiltros = filtroEspecialidad || filtroHorario || filtroDia;
+  const limpiarFiltros = () => {
+    setFiltroEspecialidad("");
+    setFiltroHorario("");
+    setFiltroDia("");
+  };
+
+  return (
+    <section className="space-y-5">
+      <Header title="Demanda" subtitle="Demanda esperada de citas, calculada por un modelo de machine learning entrenado aparte con el histórico real." />
+
+      {loading ? (
+        <p className="text-sm font-semibold text-slate-400">Cargando...</p>
+      ) : error ? (
+        <ErrorBanner text={error} />
+      ) : !disponible ? (
+        <EmptyState title="Sin datos de demanda" text="Aún no hay una recomendación generada. Ejecute el entrenamiento del modelo (proyecto de ML, fuera de este repo) para producirla." />
+      ) : (
+        <>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            {metricas && (
+              <p className="text-[11px] font-semibold text-slate-400">
+                Entrenado el {new Date(metricas.generado_en).toLocaleString("es-PE")} con {metricas.filas_entrenamiento} registros reales · MAE {Number(metricas.mae_xgboost).toFixed(2)} · R² {Number(metricas.r2_xgboost).toFixed(2)}
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select value={filtroEspecialidad} onChange={(event) => setFiltroEspecialidad(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 outline-none focus:border-blue-500">
+                <option value="">Todas las especialidades</option>
+                {especialidades.map((esp) => (
+                  <option key={esp} value={esp}>{esp}</option>
+                ))}
+              </select>
+              <select value={filtroHorario} onChange={(event) => setFiltroHorario(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 outline-none focus:border-blue-500">
+                <option value="">Todos los horarios</option>
+                {HORARIOS_ML_ORDEN.map((h) => (
+                  <option key={h} value={h}>{HORARIO_ML_LABEL[h]}</option>
+                ))}
+              </select>
+              <select value={filtroDia} onChange={(event) => setFiltroDia(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 outline-none focus:border-blue-500">
+                <option value="">Todos los días</option>
+                {DIAS_SEMANA_ML_ORDEN.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              {hayFiltros && (
+                <button type="button" onClick={limpiarFiltros} className="text-xs font-bold text-blue-700 hover:underline">
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          </div>
+
+          {filtradas.length === 0 ? (
+            <EmptyState title="Sin resultados" text="No hay combinaciones que coincidan con los filtros elegidos." />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-extrabold text-slate-800">Por especialidad</h3>
+                <div className="mt-4 space-y-3">
+                  {porEspecialidad.map((e) => (
+                    <BarraDemanda key={e.label} label={e.label} valor={e.valor} max={maxEspecialidad} color="#2563eb" />
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-extrabold text-slate-800">Por horario</h3>
+                <div className="mt-4 space-y-3">
+                  {porHorario.map((e) => (
+                    <BarraDemanda key={e.label} label={HORARIO_ML_LABEL[e.label] || e.label} valor={e.valor} max={maxHorario} color="#9333ea" />
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-extrabold text-slate-800">Por día de la semana</h3>
+                <div className="mt-4 space-y-3">
+                  {porDia.map((e) => (
+                    <BarraDemanda key={e.label} label={e.label} valor={e.valor} max={maxDia} color="#16a34a" />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-extrabold text-slate-800">Detalle por combinación ({filtradas.length})</h3>
+            <div className="mt-3 max-h-96 overflow-y-auto rounded-lg border border-slate-100">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-50">
+                  <tr>
+                    <th className="p-2 text-left font-extrabold text-slate-500">Especialidad</th>
+                    <th className="p-2 text-left font-extrabold text-slate-500">Horario</th>
+                    <th className="p-2 text-left font-extrabold text-slate-500">Día</th>
+                    <th className="p-2 text-right font-extrabold text-slate-500">Demanda esperada</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...filtradas]
+                    .sort((a, b) => Number(b.DemandaPredichaXGBoost) - Number(a.DemandaPredichaXGBoost))
+                    .map((r, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="p-2 font-semibold text-slate-700">{r.Especialidad}</td>
+                        <td className="p-2 text-slate-500">{HORARIO_ML_LABEL[r.PreferenciaHoraria] || r.PreferenciaHoraria}</td>
+                        <td className="p-2 text-slate-500">{r.DiaSemana}</td>
+                        <td className="p-2 text-right font-bold text-slate-700">{r.DemandaPredichaXGBoost}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function GestionHorarios() {
+  const [catalogo, setCatalogo] = useState({ medicos: [], especialidades: [] });
+  const [medicoId, setMedicoId] = useState("");
+  const [error, setError] = useState("");
+
+  const [plantilla, setPlantilla] = useState({});
+  const [plantillaLoading, setPlantillaLoading] = useState(false);
+  const [agregandoDia, setAgregandoDia] = useState(null);
+  const [bloqueEditandoId, setBloqueEditandoId] = useState(null);
+  const [nuevoBloque, setNuevoBloque] = useState({ horaInicio: "08:00", horaFin: "13:00", tipoTurno: "REGULAR" });
+  const [errorBloque, setErrorBloque] = useState("");
+  const [avisoBloque, setAvisoBloque] = useState("");
+  const [guardandoBloque, setGuardandoBloque] = useState(false);
+
+  const [ambitoTipo, setAmbitoTipo] = useState("solo"); // "solo" | "especialidad" | "medicos"
+  const [ambitoEspecialidadId, setAmbitoEspecialidadId] = useState("");
+  const [ambitoMedicosSeleccionados, setAmbitoMedicosSeleccionados] = useState([]);
+
+  const [recomendaciones, setRecomendaciones] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -3253,227 +3406,347 @@ function GestionHorarios() {
         const data = await apiRequest("/catalogo/");
         setCatalogo(data);
       } catch {
-        // El selector de médico simplemente quedará vacío; el error se ve al enviar.
+        // El selector de médico simplemente quedará vacío.
       }
     })();
   }, []);
 
-  const cargarHorarios = async (idMedico) => {
-    if (!idMedico) {
-      setHorarios([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiRequest("/recomendacion-horarios/");
+        setRecomendaciones(data.recomendaciones || []);
+      } catch {
+        // La sugerencia es un complemento: si falla, el formulario sigue funcionando igual.
+      }
+    })();
+  }, []);
+
+  const medicoActual = catalogo.medicos.find((m) => String(m.id) === String(medicoId));
+
+  const sugerenciasEspecialidad = useMemo(() => {
+    if (!medicoActual) return [];
+    return recomendaciones
+      .filter((r) => r.Especialidad === medicoActual.especialidad)
+      .sort((a, b) => Number(b.DemandaPredichaXGBoost) - Number(a.DemandaPredichaXGBoost))
+      .slice(0, 6);
+  }, [recomendaciones, medicoActual]);
+
+  const aplicarSugerencia = (diaLabel, horarioLabel) => {
+    const diaSemana = DIAS_SEMANA_ML_ORDEN.indexOf(diaLabel);
+    if (diaSemana < 0) return;
+    const rangos = { Manana: ["08:00", "12:00"], Tarde: ["12:00", "18:00"], "After Office": ["18:00", "21:00"] };
+    const [horaInicio, horaFin] = rangos[horarioLabel] || ["08:00", "13:00"];
+    setAgregandoDia(diaSemana);
+    setBloqueEditandoId(null);
+    setNuevoBloque({ horaInicio, horaFin, tipoTurno: horarioLabel === "After Office" ? "AFTER_OFFICE" : "REGULAR" });
+    setErrorBloque("");
+  };
+
+  // Recarga en silencio tras crear/editar/eliminar un bloque: no toca plantillaLoading
+  // para que la grilla no desaparezca ni parpadee, solo se actualizan los datos ya montados.
+  const cargarPlantilla = async () => {
+    if (!medicoId) {
+      setPlantilla({});
       return;
     }
-    setHorariosLoading(true);
-    setHorariosError("");
     try {
-      const hoy = new Date().toISOString().slice(0, 10);
-      const data = await apiRequest(`/horarios/?medico_id=${idMedico}&fecha_desde=${hoy}`);
-      setHorarios(data.horarios);
+      const data = await apiRequest(`/plantilla-horario/?medico_id=${medicoId}`);
+      const agrupado = {};
+      data.bloques.forEach((b) => {
+        if (!agrupado[b.dia_semana]) agrupado[b.dia_semana] = [];
+        agrupado[b.dia_semana].push(b);
+      });
+      setPlantilla(agrupado);
     } catch (err) {
-      setHorariosError(err.message);
-    } finally {
-      setHorariosLoading(false);
+      setError(err.message);
     }
   };
 
   useEffect(() => {
     (async () => {
       if (!medicoId) {
-        setHorarios([]);
+        setPlantilla({});
         return;
       }
-      setHorariosLoading(true);
-      setHorariosError("");
+      setPlantillaLoading(true);
       try {
-        const hoy = new Date().toISOString().slice(0, 10);
-        const data = await apiRequest(`/horarios/?medico_id=${medicoId}&fecha_desde=${hoy}`);
-        setHorarios(data.horarios);
+        const data = await apiRequest(`/plantilla-horario/?medico_id=${medicoId}`);
+        const agrupado = {};
+        data.bloques.forEach((b) => {
+          if (!agrupado[b.dia_semana]) agrupado[b.dia_semana] = [];
+          agrupado[b.dia_semana].push(b);
+        });
+        setPlantilla(agrupado);
       } catch (err) {
-        setHorariosError(err.message);
+        setError(err.message);
       } finally {
-        setHorariosLoading(false);
+        setPlantillaLoading(false);
       }
     })();
   }, [medicoId]);
 
-  const actualizar = (campo, valor) => setForm((prev) => ({ ...prev, [campo]: valor }));
-
-  const alternarDia = (valor) => {
-    setDiasSemana((prev) => (prev.includes(valor) ? prev.filter((d) => d !== valor) : [...prev, valor]));
+  const resolverAmbitoMedicoIds = () => {
+    if (!medicoId) return [];
+    const base = String(medicoId);
+    if (ambitoTipo === "especialidad" && ambitoEspecialidadId) {
+      const ids = catalogo.medicos.filter((m) => String(m.especialidad_id) === String(ambitoEspecialidadId)).map((m) => String(m.id));
+      return Array.from(new Set([base, ...ids]));
+    }
+    if (ambitoTipo === "medicos") {
+      return Array.from(new Set([base, ...ambitoMedicosSeleccionados]));
+    }
+    return [base];
   };
 
-  const submit = async (event) => {
-    event.preventDefault();
-    setFieldErrors({});
-    setMessage("");
-    if (!medicoId) {
-      setFieldErrors({ medico_id: "Seleccione un médico." });
-      return;
+  const toggleAmbitoMedico = (id) => {
+    setAmbitoMedicosSeleccionados((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
+  };
+
+  const sumarMinutosHora = (horaStr, minutos) => {
+    const [h, m] = horaStr.split(":").map(Number);
+    const total = Math.min(h * 60 + m + minutos, 23 * 60 + 59);
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+
+  const abrirNuevoBloque = (diaSemana) => {
+    const bloquesDia = plantilla[diaSemana] || [];
+    let horaInicio = "08:00";
+    let horaFin = "13:00";
+    if (bloquesDia.length > 0) {
+      // Sugerir un horario que arranque justo después del último bloque del día,
+      // para no proponer por defecto un rango que ya está ocupado en el calendario.
+      const maxFin = bloquesDia.reduce((max, b) => (b.hora_fin > max ? b.hora_fin : max), "00:00");
+      horaInicio = maxFin;
+      horaFin = sumarMinutosHora(maxFin, 60);
     }
-    setSubmitting(true);
+    setAgregandoDia(diaSemana);
+    setBloqueEditandoId(null);
+    setNuevoBloque({ horaInicio, horaFin, tipoTurno: "REGULAR" });
+    setErrorBloque("");
+  };
+
+  const abrirEditarBloque = (diaSemana, bloque) => {
+    setAgregandoDia(diaSemana);
+    setBloqueEditandoId(bloque.id);
+    setNuevoBloque({ horaInicio: bloque.hora_inicio, horaFin: bloque.hora_fin, tipoTurno: bloque.tipo_turno });
+    setErrorBloque("");
+  };
+
+  const guardarBloque = async (diaSemana) => {
+    setGuardandoBloque(true);
+    setErrorBloque("");
+    setAvisoBloque("");
     try {
-      const data = await apiRequest("/horarios/crear/", {
+      if (bloqueEditandoId) {
+        await apiRequest(`/plantilla-horario/${bloqueEditandoId}/eliminar/`, { method: "POST" });
+      }
+      await apiRequest("/plantilla-horario/crear/", {
         method: "POST",
         body: JSON.stringify({
           medico_id: medicoId,
-          fecha_inicio: form.fechaInicio,
-          fecha_fin: form.fechaFin || form.fechaInicio,
-          hora_inicio: form.horaInicio,
-          hora_fin: form.horaFin,
-          duracion_minutos: Number(form.duracionMinutos),
-          tipo_turno: form.tipoTurno,
-          dias_semana: diasSemana.length ? diasSemana : undefined,
+          dia_semana: diaSemana,
+          hora_inicio: nuevoBloque.horaInicio,
+          hora_fin: nuevoBloque.horaFin,
+          tipo_turno: nuevoBloque.tipoTurno,
         }),
       });
-      const detalleOmitidos = data.omitidos_duplicados ? ` (${data.omitidos_duplicados} ya existían y se omitieron)` : "";
-      setMessage(`Se crearon ${data.creados} horario(s)${detalleOmitidos}.`);
-      await cargarHorarios(medicoId);
     } catch (err) {
-      if (err.fieldErrors) setFieldErrors(err.fieldErrors);
-      else setMessage(err.message);
-    } finally {
-      setSubmitting(false);
+      setErrorBloque(err.fieldErrors ? Object.values(err.fieldErrors).join(" ") : err.message);
+      setGuardandoBloque(false);
+      return;
     }
+
+    // Editar corrige solo el médico visible; solo las altas nuevas se replican al ámbito elegido.
+    if (!bloqueEditandoId) {
+      const otros = resolverAmbitoMedicoIds().filter((id) => id !== String(medicoId));
+      if (otros.length) {
+        const errores = [];
+        for (const id of otros) {
+          try {
+            await apiRequest("/plantilla-horario/crear/", {
+              method: "POST",
+              body: JSON.stringify({
+                medico_id: id,
+                dia_semana: diaSemana,
+                hora_inicio: nuevoBloque.horaInicio,
+                hora_fin: nuevoBloque.horaFin,
+                tipo_turno: nuevoBloque.tipoTurno,
+              }),
+            });
+          } catch (err) {
+            const nombre = catalogo.medicos.find((m) => String(m.id) === id)?.nombre || `#${id}`;
+            errores.push(`${nombre}: ${err.fieldErrors ? Object.values(err.fieldErrors).join(" ") : err.message}`);
+          }
+        }
+        const exitosos = otros.length + 1 - errores.length;
+        setAvisoBloque(`Bloque aplicado a ${exitosos}/${otros.length + 1} médico(s)${errores.length ? `. Con errores: ${errores.join(" · ")}` : "."}`);
+      }
+    }
+
+    setAgregandoDia(null);
+    setBloqueEditandoId(null);
+    await cargarPlantilla();
+    setGuardandoBloque(false);
   };
 
-  const confirmarEliminar = async () => {
-    const horario = eliminarModal;
-    setEliminarModal(null);
+  const eliminarBloque = async (bloqueId) => {
+    setError("");
     try {
-      await apiRequest(`/horarios/${horario.id}/eliminar/`, { method: "POST" });
-      await cargarHorarios(medicoId);
+      await apiRequest(`/plantilla-horario/${bloqueId}/eliminar/`, { method: "POST" });
+      await cargarPlantilla();
     } catch (err) {
-      setHorariosError(err.message);
+      setError(err.message);
     }
   };
 
   return (
     <section className="space-y-5">
-      <Header title="Horarios" subtitle="Designe bloques de horario disponible para un médico y consulte lo ya programado." />
+      <Header
+        title="Horarios"
+        subtitle="Plantilla semanal por médico — puede aplicarla a toda una especialidad o a médicos específicos."
+        action={<button onClick={cargarPlantilla} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Actualizar</button>}
+      />
 
-      <form onSubmit={submit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-extrabold text-slate-800">Designar horarios</h3>
-        <div>
-          <label className="text-sm font-bold text-slate-700">Médico *</label>
-          <select value={medicoId} onChange={(event) => setMedicoId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500 sm:max-w-sm">
-            <option value="">Seleccione...</option>
-            {catalogo.medicos.map((m) => (
-              <option key={m.id} value={m.id}>{m.nombre} · {m.especialidad}</option>
-            ))}
-          </select>
-          {fieldErrors.medico_id && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.medico_id}</p>}
-        </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <label className="text-sm font-bold text-slate-700">Médico *</label>
+        <select value={medicoId} onChange={(event) => setMedicoId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500 sm:w-72">
+          <option value="">Seleccione...</option>
+          {catalogo.medicos.map((m) => (
+            <option key={m.id} value={m.id}>{m.nombre} · {m.especialidad}</option>
+          ))}
+        </select>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="text-sm font-bold text-slate-700">Fecha inicio *</label>
-            <input type="date" value={form.fechaInicio} onChange={(event) => actualizar("fechaInicio", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
-            {fieldErrors.fecha_inicio && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.fecha_inicio}</p>}
-          </div>
-          <div>
-            <label className="text-sm font-bold text-slate-700">Fecha fin *</label>
-            <input type="date" value={form.fechaFin} onChange={(event) => actualizar("fechaFin", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
-            {fieldErrors.fecha_fin && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.fecha_fin}</p>}
-          </div>
-          <div>
-            <label className="text-sm font-bold text-slate-700">Hora inicio *</label>
-            <input type="time" value={form.horaInicio} onChange={(event) => actualizar("horaInicio", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
-            {fieldErrors.hora_inicio && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.hora_inicio}</p>}
-          </div>
-          <div>
-            <label className="text-sm font-bold text-slate-700">Hora fin *</label>
-            <input type="time" value={form.horaFin} onChange={(event) => actualizar("horaFin", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
-            {fieldErrors.hora_fin && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.hora_fin}</p>}
-          </div>
-          <div>
-            <label className="text-sm font-bold text-slate-700">Duración por cita</label>
-            <select value={form.duracionMinutos} onChange={(event) => actualizar("duracionMinutos", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500">
-              <option value="15">15 minutos</option>
-              <option value="20">20 minutos</option>
-              <option value="30">30 minutos</option>
-              <option value="45">45 minutos</option>
-              <option value="60">60 minutos</option>
-            </select>
-            {fieldErrors.duracion_minutos && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.duracion_minutos}</p>}
-          </div>
-          <div>
-            <label className="text-sm font-bold text-slate-700">Tipo de turno</label>
-            <select value={form.tipoTurno} onChange={(event) => actualizar("tipoTurno", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500">
-              <option value="REGULAR">Regular</option>
-              <option value="AFTER_OFFICE">After office</option>
-            </select>
-            {fieldErrors.tipo_turno && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.tipo_turno}</p>}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-sm font-bold text-slate-700">Días de la semana</label>
-          <p className="mt-0.5 text-xs text-slate-400">Si no selecciona ninguno, se generan horarios todos los días del rango.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {DIAS_SEMANA.map((dia) => {
-              const activo = diasSemana.includes(dia.value);
-              return (
-                <button
-                  type="button"
-                  key={dia.value}
-                  onClick={() => alternarDia(dia.value)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${activo ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-                >
-                  {dia.label}
-                </button>
-              );
-            })}
-          </div>
-          {fieldErrors.dias_semana && <p className="mt-1 text-xs font-bold text-red-600">{fieldErrors.dias_semana}</p>}
-        </div>
-
-        {message && <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700">{message}</p>}
-
-        <button type="submit" disabled={submitting} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">
-          {submitting ? "Generando..." : "Generar horarios"}
-        </button>
-      </form>
-
-      <div className="space-y-3">
-        <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-          Horarios programados {medicoId ? `(desde hoy)` : ""}
-        </h3>
-        {!medicoId ? (
-          <EmptyState title="Seleccione un médico" text="Elija un médico en el formulario para ver sus horarios programados." />
-        ) : horariosError ? (
-          <ErrorBanner text={horariosError} onRetry={() => cargarHorarios(medicoId)} />
-        ) : horariosLoading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((i) => <CitaCardSkeleton key={i} />)}</div>
-        ) : horarios.length === 0 ? (
-          <EmptyState title="Sin horarios" text="Este médico no tiene horarios programados desde hoy en adelante." />
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {horarios.map((h) => {
-              const meta = HORARIO_ESTADO_META[h.estado] || HORARIO_ESTADO_META.DISPONIBLE;
-              return (
-                <article key={h.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div>
-                    <p className="text-sm font-extrabold text-slate-900">{h.fecha}</p>
-                    <p className="mt-0.5 text-xs font-semibold text-slate-500">{h.hora_inicio} - {h.hora_fin}</p>
-                    <span className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[11px] font-bold ${meta.badge}`}>{meta.label}</span>
-                  </div>
-                  {h.estado !== "OCUPADA" && (
-                    <button
-                      onClick={() => setEliminarModal(h)}
-                      aria-label="Eliminar horario"
-                      className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <IconTrash className="h-4 w-4" />
-                    </button>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        )}
+        {error && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
       </div>
 
-      <EliminarHorarioModal horario={eliminarModal} onCancel={() => setEliminarModal(null)} onConfirm={confirmarEliminar} />
+      {medicoId && sugerenciasEspecialidad.length > 0 && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-5 shadow-sm">
+          <h3 className="text-sm font-extrabold text-slate-800">Sugerencia de horarios para {medicoActual.especialidad}</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Días y horarios con mayor demanda esperada según el modelo de ML. Toque una sugerencia para precargar ese bloque en la plantilla.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {sugerenciasEspecialidad.map((s, i) => (
+              <button
+                type="button"
+                key={i}
+                onClick={() => aplicarSugerencia(s.DiaSemana, s.PreferenciaHoraria)}
+                className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
+              >
+                {s.DiaSemana} · {HORARIO_ML_LABEL[s.PreferenciaHoraria] || s.PreferenciaHoraria} ({s.DemandaPredichaXGBoost})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-extrabold text-slate-800">Plantilla semanal</h3>
+
+        {!medicoId ? (
+          <p className="mt-4 text-sm font-semibold text-slate-400">Seleccione un médico arriba para ver y editar su plantilla.</p>
+        ) : plantillaLoading ? (
+          <p className="mt-4 text-sm font-semibold text-slate-400">Cargando plantilla...</p>
+        ) : (
+          <>
+            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-bold text-slate-700">Aplicar bloques nuevos a:</p>
+              <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600">
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="ambito-horarios" checked={ambitoTipo === "solo"} onChange={() => setAmbitoTipo("solo")} /> Solo este médico
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="ambito-horarios" checked={ambitoTipo === "especialidad"} onChange={() => setAmbitoTipo("especialidad")} /> Toda la especialidad
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="ambito-horarios" checked={ambitoTipo === "medicos"} onChange={() => setAmbitoTipo("medicos")} /> Médicos específicos
+                </label>
+              </div>
+
+              {ambitoTipo === "especialidad" && (
+                <select value={ambitoEspecialidadId} onChange={(event) => setAmbitoEspecialidadId(event.target.value)} className="mt-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs outline-none focus:border-blue-500">
+                  <option value="">Seleccione especialidad...</option>
+                  {catalogo.especialidades.map((esp) => (
+                    <option key={esp.id} value={esp.id}>{esp.nombre}</option>
+                  ))}
+                </select>
+              )}
+
+              {ambitoTipo === "medicos" && (
+                <div className="mt-2 max-h-32 space-y-0.5 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+                  {catalogo.medicos.filter((m) => String(m.id) !== String(medicoId)).map((m) => {
+                    const id = String(m.id);
+                    return (
+                      <label key={id} className="flex items-center gap-2 py-0.5 text-xs text-slate-600">
+                        <input type="checkbox" checked={ambitoMedicosSeleccionados.includes(id)} onChange={() => toggleAmbitoMedico(id)} className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
+                        {m.nombre} <span className="text-slate-400">· {m.especialidad}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {ambitoTipo !== "solo" && (
+                <p className="mt-2 text-[11px] text-slate-400">
+                  Los bloques que agregue también se aplicarán a esos médicos. Editar o eliminar un bloque solo afecta al médico seleccionado arriba.
+                </p>
+              )}
+              {avisoBloque && <p className="mt-2 text-[11px] font-bold text-blue-700">{avisoBloque}</p>}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+              {DIA_LABEL_CORTO.map((label, idx) => (
+                <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                  <h4 className="text-xs font-extrabold uppercase text-slate-500">{label}</h4>
+                  <div className="mt-2 space-y-1.5">
+                    {(plantilla[idx] || []).map((b) => (
+                      <div
+                        key={b.id}
+                        className={`flex items-center justify-between rounded-lg border px-2 py-1.5 text-[11px] font-bold ${
+                          b.tipo_turno === "AFTER_OFFICE" ? "border-purple-200 bg-purple-50 text-purple-700" : "border-blue-200 bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        <button type="button" onClick={() => abrirEditarBloque(idx, b)} className="text-left hover:underline" title="Clic para modificar">
+                          {b.hora_inicio}-{b.hora_fin}
+                        </button>
+                        <button type="button" onClick={() => eliminarBloque(b.id)} aria-label="Eliminar bloque" className="ml-1 font-extrabold text-slate-400 hover:text-red-600">
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {(!plantilla[idx] || plantilla[idx].length === 0) && <p className="text-[11px] text-slate-400">Sin bloques</p>}
+                  </div>
+
+                  {agregandoDia === idx ? (
+                    <div className="mt-2 space-y-1.5 rounded-lg border border-slate-200 bg-white p-2">
+                      <input type="time" value={nuevoBloque.horaInicio} onChange={(event) => setNuevoBloque((prev) => ({ ...prev, horaInicio: event.target.value }))} className="w-full rounded border border-slate-200 px-1.5 py-1 text-[11px]" />
+                      <input type="time" value={nuevoBloque.horaFin} onChange={(event) => setNuevoBloque((prev) => ({ ...prev, horaFin: event.target.value }))} className="w-full rounded border border-slate-200 px-1.5 py-1 text-[11px]" />
+                      <select value={nuevoBloque.tipoTurno} onChange={(event) => setNuevoBloque((prev) => ({ ...prev, tipoTurno: event.target.value }))} className="w-full rounded border border-slate-200 px-1.5 py-1 text-[11px]">
+                        <option value="REGULAR">Regular</option>
+                        <option value="AFTER_OFFICE">After office</option>
+                      </select>
+                      {errorBloque && <p className="text-[10px] font-bold text-red-600">{errorBloque}</p>}
+                      <div className="flex gap-1">
+                        <button type="button" disabled={guardandoBloque} onClick={() => guardarBloque(idx)} className="flex-1 rounded bg-blue-600 py-1 text-[11px] font-bold text-white hover:bg-blue-700 disabled:opacity-60">
+                          {bloqueEditandoId ? "Guardar cambios" : "Guardar"}
+                        </button>
+                        <button type="button" onClick={() => { setAgregandoDia(null); setBloqueEditandoId(null); }} className="flex-1 rounded border border-slate-200 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-50">
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => abrirNuevoBloque(idx)} className="mt-2 w-full rounded-lg border border-dashed border-slate-300 py-1.5 text-[11px] font-bold text-slate-500 hover:border-blue-400 hover:text-blue-600">
+                      + Agregar bloque
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -3499,6 +3772,10 @@ function PanelAdmin({ view, citas, refresh, pagination, setAdminPage }) {
 
   if (view === "Horarios") {
     return <GestionHorarios />;
+  }
+
+  if (view === "Demanda") {
+    return <GestionDemanda />;
   }
 
   // Más antigua primero: para que las solicitudes no atendidas no se acumulen sin verse.
