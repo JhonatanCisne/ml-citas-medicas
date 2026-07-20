@@ -59,9 +59,3 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-local-jwt-clinica")
 JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = 8
-
-DEMO_USERS = {
-    "paciente@clinica.com": {"password": "Paciente123", "role": "paciente"},
-    "medico@clinica.com": {"password": "Medico123", "role": "medico"},
-    "admin@clinica.com": {"password": "Admin123", "role": "admin"},
-}

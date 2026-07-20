@@ -11,6 +11,7 @@ class Paciente(models.Model):
     direccion = models.CharField(max_length=150, blank=True, null=True)
     fecha_nacimiento = models.DateField(blank=True, null=True)
     estado = models.CharField(max_length=20, default="ACTIVO")
+    contrasena = models.CharField(max_length=255)
 
     class Meta:
         managed = False
@@ -50,6 +51,7 @@ class Medico(models.Model):
     correo = models.CharField(max_length=100, unique=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
     estado = models.CharField(max_length=20, default="ACTIVO")
+    contrasena = models.CharField(max_length=255)
 
     class Meta:
         managed = False
@@ -127,6 +129,25 @@ class Notificacion(models.Model):
     class Meta:
         managed = False
         db_table = "notificacion"
+
+
+class SolicitudDisponibilidad(models.Model):
+    id_solicitud = models.AutoField(primary_key=True)
+    id_medico = models.ForeignKey(Medico, models.DO_NOTHING, db_column="id_medico")
+    tipo = models.CharField(max_length=20)  # BLOQUEO, APERTURA, VACACIONES, DESCANSO
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    hora_inicio = models.TimeField(blank=True, null=True)
+    hora_fin = models.TimeField(blank=True, null=True)
+    motivo = models.CharField(max_length=255)
+    estado = models.CharField(max_length=20, default="PENDIENTE")  # PENDIENTE, APROBADA, RECHAZADA, CANCELADA
+    fecha_solicitud = models.DateTimeField()
+    fecha_resolucion = models.DateTimeField(blank=True, null=True)
+    comentario_admin = models.CharField(max_length=255, blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = "solicitud_disponibilidad"
 
 
 class Administrador(models.Model):

@@ -27,7 +27,11 @@ export async function apiRequest(path, options = {}) {
     if (response.status === 401) {
       clearToken();
     }
-    throw new Error(data.detail || "No se pudo completar la operación.");
+    const error = new Error(data.detail || "No se pudo completar la operación.");
+    if (data.errores) {
+      error.fieldErrors = data.errores;
+    }
+    throw error;
   }
   return data;
 }
