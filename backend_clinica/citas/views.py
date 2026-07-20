@@ -1,5 +1,7 @@
+import csv
 import json
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
 import jwt
 from django.conf import settings
@@ -18,6 +20,7 @@ from .models import (
     Medico,
     Notificacion,
     Paciente,
+    PlantillaHorario,
     Sede,
     SolicitudDisponibilidad,
 )
@@ -234,9 +237,66 @@ def me(request):
     return JsonResponse({"user": {"id": int(user["sub"]), "role": user["role"], "email": user["email"], "name": user["name"]}})
 
 
+HORIZONTE_EXTENSION_DIAS = 90
+MINIMO_DIAS_RESTANTES = 30
+
+
+def _extender_horarios_desde_plantillas():
+    """Mantiene una ventana móvil de horarios DISPONIBLES a partir de la plantilla
+    semanal de cada médico, para que nunca se agoten a medida que avanza el calendario."""
+    hoy = date.today()
+    limite = hoy + timedelta(days=HORIZONTE_EXTENSION_DIAS)
+    medico_ids = PlantillaHorario.objects.values_list("id_medico_id", flat=True).distinct()
+
+    for medico_id in medico_ids:
+        ultima = (
+            AgendaMedica.objects.filter(id_medico_id=medico_id, estado="DISPONIBLE", fecha__gte=hoy)
+            .order_by("-fecha")
+            .values_list("fecha", flat=True)
+            .first()
+        )
+        if ultima and (ultima - hoy).days >= MINIMO_DIAS_RESTANTES:
+            continue
+
+        bloques = list(PlantillaHorario.objects.filter(id_medico_id=medico_id))
+        if not bloques:
+            continue
+        bloques_por_dia = {}
+        for b in bloques:
+            bloques_por_dia.setdefault(b.dia_semana, []).append(b)
+
+        desde = (ultima + timedelta(days=1)) if ultima else hoy
+        if desde > limite:
+            continue
+
+        nuevos = []
+        dia = desde
+        while dia <= limite:
+            for b in bloques_por_dia.get(dia.weekday(), []):
+                for inicio, fin in _slots_de_bloque(dia, b.hora_inicio, b.hora_fin, 30):
+                    nuevos.append((dia, inicio, fin, b.tipo_turno))
+            dia += timedelta(days=1)
+        if not nuevos:
+            continue
+
+        existentes = set(
+            AgendaMedica.objects.filter(id_medico_id=medico_id, fecha__gte=desde, fecha__lte=limite).values_list(
+                "fecha", "hora_inicio"
+            )
+        )
+        objetos = [
+            AgendaMedica(id_medico_id=medico_id, fecha=d, hora_inicio=i, hora_fin=f, tipo_turno=t, estado="DISPONIBLE")
+            for d, i, f, t in nuevos
+            if (d, i) not in existentes
+        ]
+        if objetos:
+            AgendaMedica.objects.bulk_create(objetos, batch_size=500)
+
+
 @require_http_methods(["GET"])
 @_auth_required
 def catalogo(_request):
+    _extender_horarios_desde_plantillas()
     especialidades = [
         {
             "id": esp.id_especialidad,
@@ -259,7 +319,7 @@ def catalogo(_request):
     ]
     agendas_qs = (
         AgendaMedica.objects.select_related("id_medico")
-        .filter(estado="DISPONIBLE")
+        .filter(estado="DISPONIBLE", fecha__gte=date.today())
         .order_by("fecha", "hora_inicio", "id_medico_id")
     )
     agendas = [
@@ -373,6 +433,28 @@ def _horario_dict(agenda):
     }
 
 
+def _plantilla_dict(bloque):
+    return {
+        "id": bloque.id_plantilla,
+        "medico_id": bloque.id_medico_id,
+        "dia_semana": bloque.dia_semana,
+        "hora_inicio": _time(bloque.hora_inicio),
+        "hora_fin": _time(bloque.hora_fin),
+        "tipo_turno": bloque.tipo_turno,
+    }
+
+
+def _slots_de_bloque(dia, hora_inicio, hora_fin, duracion_minutos):
+    cursor = datetime.combine(dia, hora_inicio)
+    fin_bloque = datetime.combine(dia, hora_fin)
+    paso = timedelta(minutes=duracion_minutos)
+    slots = []
+    while cursor + paso <= fin_bloque:
+        slots.append((cursor.time(), (cursor + paso).time()))
+        cursor += paso
+    return slots
+
+
 @require_http_methods(["GET"])
 @_auth_required
 def horarios_medico(request):
@@ -479,12 +561,8 @@ def crear_horarios(request):
     dia = fecha_inicio
     while dia <= fecha_fin:
         if dias_semana is None or dia.weekday() in dias_semana:
-            cursor = datetime.combine(dia, hora_inicio)
-            fin_bloque = datetime.combine(dia, hora_fin)
-            paso = timedelta(minutes=duracion_minutos)
-            while cursor + paso <= fin_bloque:
-                nuevos.append((dia, cursor.time(), (cursor + paso).time()))
-                cursor += paso
+            for inicio, fin in _slots_de_bloque(dia, hora_inicio, hora_fin, duracion_minutos):
+                nuevos.append((dia, inicio, fin))
         dia += timedelta(days=1)
 
     if not nuevos:
@@ -536,6 +614,243 @@ def eliminar_horario(request, horario_id):
 
     agenda.delete()
     return JsonResponse({"ok": True})
+
+
+@require_http_methods(["GET"])
+@_auth_required
+def plantilla_horario(request):
+    user = request.user_payload
+    if user["role"] != "admin":
+        return JsonResponse({"detail": "No autorizado."}, status=403)
+
+    medico_id = request.GET.get("medico_id")
+    if not medico_id:
+        return JsonResponse({"detail": "Indique medico_id."}, status=400)
+
+    qs = PlantillaHorario.objects.filter(id_medico_id=medico_id).order_by("dia_semana", "hora_inicio")
+    return JsonResponse({"bloques": [_plantilla_dict(b) for b in qs]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@_auth_required
+def crear_bloque_plantilla(request):
+    user = request.user_payload
+    if user["role"] != "admin":
+        return JsonResponse({"detail": "Solo el administrador puede editar la plantilla."}, status=403)
+
+    data = _body(request)
+    medico_id = data.get("medico_id")
+    dia_semana_raw = data.get("dia_semana")
+    hora_inicio_raw = (data.get("hora_inicio") or "").strip()
+    hora_fin_raw = (data.get("hora_fin") or "").strip()
+    tipo_turno = (data.get("tipo_turno") or "REGULAR").strip().upper()
+
+    errores = {}
+    medico = Medico.objects.filter(id_medico=medico_id).first() if medico_id else None
+    if not medico_id:
+        errores["medico_id"] = "Seleccione un médico."
+    elif not medico:
+        errores["medico_id"] = "Médico no encontrado."
+
+    dia_semana = None
+    try:
+        dia_semana = int(dia_semana_raw)
+        if dia_semana not in DIAS_SEMANA_VALIDOS:
+            raise ValueError
+    except (TypeError, ValueError):
+        errores["dia_semana"] = "Día de la semana inválido."
+        dia_semana = None
+
+    try:
+        hora_inicio = time.fromisoformat(hora_inicio_raw)
+    except ValueError:
+        hora_inicio = None
+        errores["hora_inicio"] = "Hora inválida."
+
+    try:
+        hora_fin = time.fromisoformat(hora_fin_raw)
+    except ValueError:
+        hora_fin = None
+        errores["hora_fin"] = "Hora inválida."
+
+    if hora_inicio and hora_fin and hora_fin <= hora_inicio:
+        errores["hora_fin"] = "Debe ser posterior a la hora de inicio."
+
+    if tipo_turno not in TIPOS_TURNO_VALIDOS:
+        errores["tipo_turno"] = "Tipo de turno inválido."
+
+    if not errores and medico and dia_semana is not None and hora_inicio and hora_fin:
+        solapa = PlantillaHorario.objects.filter(
+            id_medico=medico, dia_semana=dia_semana, hora_inicio__lt=hora_fin, hora_fin__gt=hora_inicio
+        ).first()
+        if solapa:
+            errores["hora_inicio"] = f"Se superpone con un bloque existente ({_time(solapa.hora_inicio)}-{_time(solapa.hora_fin)})."
+
+    if errores:
+        return JsonResponse({"detail": "Revise los datos ingresados.", "errores": errores}, status=400)
+
+    bloque = PlantillaHorario.objects.create(
+        id_medico=medico,
+        dia_semana=dia_semana,
+        hora_inicio=hora_inicio,
+        hora_fin=hora_fin,
+        tipo_turno=tipo_turno,
+    )
+    return JsonResponse({"bloque": _plantilla_dict(bloque)}, status=201)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@_auth_required
+def eliminar_bloque_plantilla(request, bloque_id):
+    user = request.user_payload
+    if user["role"] != "admin":
+        return JsonResponse({"detail": "No autorizado."}, status=403)
+
+    bloque = PlantillaHorario.objects.filter(id_plantilla=bloque_id).first()
+    if not bloque:
+        return JsonResponse({"detail": "Bloque no encontrado."}, status=404)
+
+    bloque.delete()
+    return JsonResponse({"ok": True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@_auth_required
+def aplicar_plantilla(request):
+    user = request.user_payload
+    if user["role"] != "admin":
+        return JsonResponse({"detail": "Solo el administrador puede generar horarios."}, status=403)
+
+    data = _body(request)
+    medico_id = data.get("medico_id")
+    fecha_inicio_raw = (data.get("fecha_inicio") or "").strip()
+    fecha_fin_raw = (data.get("fecha_fin") or "").strip()
+    duracion_minutos = data.get("duracion_minutos") or 30
+
+    errores = {}
+    medico = Medico.objects.filter(id_medico=medico_id).first() if medico_id else None
+    if not medico_id:
+        errores["medico_id"] = "Seleccione un médico."
+    elif not medico:
+        errores["medico_id"] = "Médico no encontrado."
+
+    try:
+        fecha_inicio = date.fromisoformat(fecha_inicio_raw)
+    except ValueError:
+        fecha_inicio = None
+        errores["fecha_inicio"] = "Fecha inválida."
+
+    try:
+        fecha_fin = date.fromisoformat(fecha_fin_raw)
+    except ValueError:
+        fecha_fin = None
+        errores["fecha_fin"] = "Fecha inválida."
+
+    if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+        errores["fecha_fin"] = "Debe ser igual o posterior a la fecha de inicio."
+    if fecha_inicio and fecha_fin and (fecha_fin - fecha_inicio).days > 180:
+        errores["fecha_fin"] = "El rango no puede superar 180 días."
+
+    try:
+        duracion_minutos = int(duracion_minutos)
+        if duracion_minutos <= 0 or duracion_minutos > 240:
+            raise ValueError
+    except (TypeError, ValueError):
+        errores["duracion_minutos"] = "Duración inválida (1 a 240 minutos)."
+
+    if errores:
+        return JsonResponse({"detail": "Revise los datos ingresados.", "errores": errores}, status=400)
+
+    bloques = list(PlantillaHorario.objects.filter(id_medico=medico))
+    if not bloques:
+        return JsonResponse(
+            {"detail": "Este médico no tiene una plantilla semanal configurada.", "errores": {"medico_id": "Sin plantilla semanal."}},
+            status=400,
+        )
+
+    bloques_por_dia = {}
+    for b in bloques:
+        bloques_por_dia.setdefault(b.dia_semana, []).append(b)
+
+    nuevos = []
+    dia = fecha_inicio
+    while dia <= fecha_fin:
+        for b in bloques_por_dia.get(dia.weekday(), []):
+            for inicio, fin in _slots_de_bloque(dia, b.hora_inicio, b.hora_fin, duracion_minutos):
+                nuevos.append((dia, inicio, fin, b.tipo_turno))
+        dia += timedelta(days=1)
+
+    if not nuevos:
+        return JsonResponse(
+            {"detail": "Revise los datos ingresados.", "errores": {"fecha_fin": "El rango no genera ningún horario con la plantilla actual."}},
+            status=400,
+        )
+
+    existentes = set(
+        AgendaMedica.objects.filter(
+            id_medico=medico, fecha__gte=fecha_inicio, fecha__lte=fecha_fin
+        ).values_list("fecha", "hora_inicio")
+    )
+
+    creados = 0
+    omitidos = 0
+    for dia, inicio, fin, tipo_turno in nuevos:
+        if (dia, inicio) in existentes:
+            omitidos += 1
+            continue
+        AgendaMedica.objects.create(
+            id_medico=medico,
+            fecha=dia,
+            hora_inicio=inicio,
+            hora_fin=fin,
+            tipo_turno=tipo_turno,
+            estado="DISPONIBLE",
+        )
+        creados += 1
+
+    return JsonResponse({"creados": creados, "omitidos_duplicados": omitidos}, status=201)
+
+
+# Carpeta donde el proyecto de ML (independiente, fuera de este repo) deja los
+# CSV ya calculados. El backend solo los lee como archivos planos: no importa
+# pandas/sklearn/xgboost ni ejecuta ningun modelo, para no acoplar ese stack
+# al del backend.
+RUTA_RECOMENDACIONES_ML = Path(__file__).resolve().parent.parent / "ml_recomendaciones"
+
+
+def _leer_csv(ruta):
+    if not ruta.exists():
+        return None
+    with open(ruta, newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+@require_http_methods(["GET"])
+@_auth_required
+def recomendacion_horarios(request):
+    user = request.user_payload
+    if user["role"] != "admin":
+        return JsonResponse({"detail": "No autorizado."}, status=403)
+
+    filas = _leer_csv(RUTA_RECOMENDACIONES_ML / "recomendacion_horarios.csv")
+    if filas is None:
+        return JsonResponse({"disponible": False})
+
+    metricas_filas = _leer_csv(RUTA_RECOMENDACIONES_ML / "metricas.csv")
+    metricas = metricas_filas[0] if metricas_filas else None
+
+    return JsonResponse(
+        {
+            "disponible": True,
+            "generado_en": metricas["generado_en"] if metricas else None,
+            "filas_entrenamiento": metricas["filas_entrenamiento"] if metricas else None,
+            "metricas": metricas,
+            "recomendaciones": filas,
+        }
+    )
 
 
 ORDENAMIENTOS_CITAS = {

@@ -1,0 +1,39 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+.env
+.env.local
+*.local
+
+*.sqlite3
+db.sqlite3
+
+.git/
+.gitignore
+
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+*.log
+
+.vscode/
+.idea/
+.DS_Store
+
+README.md
+usuarios_demo.txt
+
+# Solo lo usa el servicio de Postgres (montado como volumen en docker-compose)
+db/
+
+# Artefactos generados por el proyecto de ML aparte (montados como volumen en
+# docker-compose para no tener que reconstruir la imagen cada vez que se
+# reentrena y se genera un CSV nuevo).
+ml_recomendaciones/

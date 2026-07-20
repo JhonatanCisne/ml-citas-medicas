@@ -150,6 +150,19 @@ class SolicitudDisponibilidad(models.Model):
         db_table = "solicitud_disponibilidad"
 
 
+class PlantillaHorario(models.Model):
+    id_plantilla = models.AutoField(primary_key=True)
+    id_medico = models.ForeignKey(Medico, models.DO_NOTHING, db_column="id_medico")
+    dia_semana = models.SmallIntegerField()  # 0=Lunes .. 6=Domingo (coincide con date.weekday())
+    hora_inicio = models.TimeField()
+    hora_fin = models.TimeField()
+    tipo_turno = models.CharField(max_length=30, default="REGULAR")
+
+    class Meta:
+        managed = False
+        db_table = "plantilla_horario"
+
+
 class Administrador(models.Model):
     id_administrador = models.AutoField(primary_key=True)
     nombres = models.CharField(max_length=100)

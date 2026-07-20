@@ -1,0 +1,109 @@
+﻿Especialidad,PreferenciaHoraria,DiaSemana,HistoricoDemanda,DemandaPredichaXGBoost,DemandaPredichaRandomForest
+Cardiología,After Office,Lunes,45,45,45
+Cardiología,After Office,Martes,45,45,45
+Ginecología,After Office,Lunes,45,45,45
+Medicina General,After Office,Martes,45,45,45
+Pediatría,After Office,Miercoles,45,45,45
+Pediatría,After Office,Lunes,45,45,45
+Pediatría,After Office,Martes,45,45,45
+Medicina General,After Office,Lunes,45,45,45
+Medicina General,After Office,Viernes,45,45,45
+Medicina General,After Office,Jueves,45,45,45
+Medicina General,After Office,Miercoles,45,45,45
+Pediatría,After Office,Jueves,44,44,44
+Cardiología,After Office,Miercoles,43,43,44
+Pediatría,After Office,Viernes,42,42,42
+Traumatología,After Office,Lunes,43,42,42
+Medicina General,Manana,Martes,41,42,43
+Medicina General,Manana,Lunes,42,42,42
+Pediatría,Manana,Lunes,42,42,43
+Medicina General,Manana,Miercoles,42,41,40
+Pediatría,Manana,Miercoles,40,40,41
+Ginecología,After Office,Martes,40,40,42
+Cardiología,Manana,Lunes,39,40,40
+Pediatría,Manana,Martes,40,40,40
+Ginecología,After Office,Miercoles,40,39,39
+Traumatología,After Office,Martes,37,38,40
+Cardiología,After Office,Jueves,37,38,38
+Ginecología,After Office,Jueves,34,37,39
+Medicina General,Manana,Jueves,36,37,39
+Pediatría,Manana,Jueves,34,36,38
+Ginecología,Manana,Lunes,35,35,37
+Medicina General,Manana,Viernes,34,35,33
+Traumatología,After Office,Miercoles,36,35,35
+Dermatología,After Office,Lunes,33,34,35
+Ginecología,Manana,Martes,34,34,34
+Cardiología,Manana,Miercoles,33,34,35
+Cardiología,Manana,Martes,33,34,33
+Traumatología,Manana,Lunes,33,33,31
+Cardiología,After Office,Viernes,35,33,33
+Ginecología,After Office,Viernes,33,33,31
+Pediatría,Manana,Viernes,32,32,32
+Traumatología,After Office,Jueves,31,31,30
+Pediatría,After Office,Sabado,27,31,32
+Dermatología,After Office,Miercoles,30,31,32
+Dermatología,After Office,Martes,30,30,30
+Medicina General,Tarde,Lunes,30,30,30
+Ginecología,Manana,Miercoles,29,29,29
+Traumatología,Manana,Miercoles,28,29,27
+Medicina General,After Office,Sabado,28,29,30
+Cardiología,Manana,Jueves,27,28,30
+Pediatría,Tarde,Lunes,28,28,29
+Traumatología,After Office,Viernes,29,27,25
+Cardiología,After Office,Sabado,22,27,28
+Dermatología,Manana,Lunes,27,26,24
+Medicina General,Tarde,Martes,27,26,27
+Pediatría,Tarde,Martes,26,26,26
+Pediatría,Tarde,Miercoles,26,25,26
+Traumatología,Manana,Martes,26,25,25
+Ginecología,After Office,Sabado,22,25,26
+Dermatología,After Office,Jueves,25,25,24
+Dermatología,Manana,Miercoles,23,25,27
+Ginecología,Manana,Jueves,24,25,25
+Medicina General,Tarde,Miercoles,25,24,24
+Cardiología,Manana,Viernes,26,24,22
+Dermatología,Manana,Martes,23,24,23
+Traumatología,Manana,Jueves,24,24,24
+Traumatología,Manana,Viernes,24,24,22
+Cardiología,Tarde,Lunes,24,23,24
+Cardiología,Tarde,Martes,23,23,22
+Pediatría,Tarde,Jueves,22,23,23
+Ginecología,Manana,Viernes,26,23,21
+Ginecología,Tarde,Lunes,23,23,22
+Medicina General,Tarde,Viernes,21,22,21
+Medicina General,Tarde,Jueves,22,22,21
+Cardiología,Tarde,Miercoles,22,22,22
+Dermatología,After Office,Viernes,22,22,21
+Traumatología,After Office,Sabado,20,21,23
+Traumatología,Tarde,Lunes,21,21,22
+Cardiología,Manana,Sabado,19,20,19
+Pediatría,Tarde,Viernes,20,20,21
+Ginecología,Tarde,Martes,20,20,20
+Cardiología,Tarde,Jueves,19,20,19
+Traumatología,Tarde,Martes,19,19,18
+Medicina General,Manana,Sabado,21,19,18
+Dermatología,Manana,Jueves,20,19,19
+Ginecología,Tarde,Miercoles,18,18,17
+Ginecología,Tarde,Jueves,18,18,18
+Traumatología,Tarde,Miercoles,17,18,20
+Pediatría,Manana,Sabado,19,18,18
+Cardiología,Tarde,Viernes,18,17,16
+Dermatología,After Office,Sabado,15,16,16
+Ginecología,Manana,Sabado,15,16,14
+Dermatología,Tarde,Martes,15,15,15
+Ginecología,Tarde,Viernes,15,15,14
+Medicina General,Tarde,Sabado,15,15,15
+Dermatología,Tarde,Miercoles,14,15,15
+Dermatología,Manana,Viernes,16,15,14
+Traumatología,Manana,Sabado,15,14,15
+Traumatología,Tarde,Jueves,14,14,13
+Pediatría,Tarde,Sabado,13,13,13
+Dermatología,Tarde,Lunes,16,13,12
+Traumatología,Tarde,Viernes,12,12,12
+Cardiología,Tarde,Sabado,11,11,8
+Dermatología,Tarde,Viernes,11,11,10
+Dermatología,Tarde,Jueves,10,10,10
+Ginecología,Tarde,Sabado,10,9,7
+Dermatología,Manana,Sabado,10,9,9
+Traumatología,Tarde,Sabado,9,9,9
+Dermatología,Tarde,Sabado,8,7,7
